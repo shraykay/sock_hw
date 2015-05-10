@@ -80,21 +80,21 @@ sock352_pkt_hdr_t createPacket(int sequence_no, uint64_t ack_no, uint8_t flag) {
 	/* create a packet and plugin the sequence_no and the flag */
 	sock352_pkt_hdr_t newPacket;
 	newPacket.source_port = 0;
-    newPacket.dest_port = 0;
-    newPacket.sequence_no = sequence_no;
+    	newPacket.dest_port = 0;
+    	newPacket.sequence_no = sequence_no;
 	newPacket.ack_no = ack_no;
-    newPacket.flags = flag;
-    newPacket.version = SOCK352_VER_1;
-    newPacket.header_len = sizeof(sock352_pkt_hdr_t);
-    newPacket.opt_ptr = 0;
-    newPacket.protocol = 0;
+   	newPacket.flags = flag;
+    	newPacket.version = SOCK352_VER_1;
+    	newPacket.header_len = sizeof(sock352_pkt_hdr_t);
+    	newPacket.opt_ptr = 0;
+    	newPacket.protocol = 0;
 	newPacket.window = MAX_BUFFER;
 	return newPacket;	
 }
 
 /* This is a sequence number incrementor */
 int getSeq() {
-    return myConnection->sequence++;
+    	return myConnection->sequence++;
 }
 
 /* this is the initial init function if there is only a single port listed */
@@ -114,7 +114,7 @@ int sock352_init(int port) {
 	}
 	
 	printf("My Port: %d\n", myConnection->myPort);
-    printf("Server Port: %d\n", myConnection->yourPort);
+    	printf("Server Port: %d\n", myConnection->yourPort);
 	printf("sock352_init: success\n");
 
 	return SOCK352_SUCCESS;
@@ -144,7 +144,7 @@ int sock352_init2(int remote_port, int local_port) {
 	}
 	
 	printf("My Port: %d\n", myConnection->myPort);
-    printf("Server Port: %d\n", myConnection->yourPort);
+    	printf("Server Port: %d\n", myConnection->yourPort);
 	printf("sock352_init2: success\n");
 	
 	return SOCK352_SUCCESS;
@@ -176,7 +176,7 @@ int sock352_init3(int remote_port, int local_port, char *envp[] ) {
 	}
 	
 	printf("My Port: %d\n", myConnection->myPort);
-    printf("Server Port: %d\n", myConnection->yourPort);
+	printf("Server Port: %d\n", myConnection->yourPort);
 	printf("sock352_init3: success\n");
 	
 	return SOCK352_SUCCESS;
@@ -297,7 +297,7 @@ int sock352_connect(int fd, sockaddr_sock352_t *addr, socklen_t len) {
 	myConnection->socklength = len;
 	
     /* create the packets we plan to use for the SYN/ACK */
-    sock352_pkt_hdr_t sentMsg, receivedMsg;
+    	sock352_pkt_hdr_t sentMsg, receivedMsg;
 
     /* filling this packet out as per project specifications */
 	sentMsg = createPacket(getSeq(), myConnection->ackSent, SOCK352_SYN); 
