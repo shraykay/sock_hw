@@ -16,7 +16,7 @@ typedef struct link {
         socklen_t socklength_cli;
         int myPort;
         int yourPort;
-		int myFD;
+	int myFD;
         bool isClient;
         bool isServer;
         bool isOpen;
