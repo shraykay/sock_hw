@@ -7,7 +7,7 @@
 #include <endian.h>
 #include "sock352.h"
 #include "uthash.h"
-#define MAX_BUFFER 60000
+#define MAX_BUFFER 65000
 
 typedef struct link {
         struct sockaddr_in myAddress;
@@ -17,9 +17,10 @@ typedef struct link {
         int myPort;
         int yourPort;
 		int myFD;
-        int myFDbind;
-        int myFDconnect;
-        int sequence;
+        bool isClient;
+        bool isServer;
+        bool isOpen;
+        uint64_t sequence;
         uint64_t ackSent;
         uint64_t ackReceived;
 } link;

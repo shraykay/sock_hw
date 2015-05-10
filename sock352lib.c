@@ -6,6 +6,7 @@
 #include <pthread.h>
 #include <inttypes.h>
 #include <stdbool.h>
+#include <time.h>
 #include "uthash.h"
 #include "utlist.h"
 #include "sock352.h"
@@ -16,21 +17,27 @@ void init();
 void printPacketInfo(sock352_pkt_hdr_t);
 void setAck(ack, uint64_t);
 sock352_pkt_hdr_t switchAckSeq(sock352_pkt_hdr_t);
-sock352_pkt_hdr_t createPacket(int, uint64_t, uint8_t);
-int getSeq();
+sock352_pkt_hdr_t createPacket(uint64_t, uint64_t, uint8_t);
+uint64_t getSeq();
 
-/* global initialization function */
 void init() {
+	/* global initialization function */
 	myConnection = (link *) malloc (sizeof(link));
 	memset(myConnection, 0, sizeof(link));
-	myConnection->sequence = 0;
+	
+	/* seed the sequence number using the time */
+	srand(time(NULL));
+	myConnection->sequence = rand();
 	myConnection->ackReceived = 0;
 	myConnection->ackSent = 0;
+	myConnection->isClient = false;
+	myConnection->isServer = false;
+	myConnection->isOpen = false;
 	return;
 }
 
-/* this function allows me to set the ack packets globally */
 void setAck(ack type, uint64_t position) {
+	/* this function allows me to set the ack packets globally */
 	if (type == ackReceived) {
 		if (position > myConnection->ackReceived) myConnection->ackReceived = position;
 	}
@@ -40,8 +47,8 @@ void setAck(ack type, uint64_t position) {
 	return;
 }
 
-/* this function prints out the packets info as a debug tool for myself */
 void printPacketInfo(sock352_pkt_hdr_t packet) {
+	/* this function prints out the packets info as a debug tool for myself */
 	printf("Packet Sequence Number: %" PRIu64 "\n", packet.sequence_no);
 	printf("Packet Ack Number: %" PRIu64 "\n", packet.ack_no);
 	
@@ -66,39 +73,31 @@ void printPacketInfo(sock352_pkt_hdr_t packet) {
 	return;
 }
 
-sock352_pkt_hdr_t switchAckSeq(sock352_pkt_hdr_t packet) {
-	/* when a packet has been acknowledged and the next one must go out,
-	   increment the ack_no by assigning the sequence_no to it, and
-	   increment the sequence_no
-	*/
-	packet.ack_no = packet.sequence_no;
-	packet.sequence_no = getSeq();
-	return packet;
-}
-
-sock352_pkt_hdr_t createPacket(int sequence_no, uint64_t ack_no, uint8_t flag) {
+sock352_pkt_hdr_t createPacket(uint64_t sequence_no, uint64_t ack_no, uint8_t flag) {
 	/* create a packet and plugin the sequence_no and the flag */
 	sock352_pkt_hdr_t newPacket;
 	newPacket.source_port = 0;
-    	newPacket.dest_port = 0;
-    	newPacket.sequence_no = sequence_no;
+    newPacket.dest_port = 0;
+    newPacket.sequence_no = sequence_no;
 	newPacket.ack_no = ack_no;
    	newPacket.flags = flag;
-    	newPacket.version = SOCK352_VER_1;
-    	newPacket.header_len = sizeof(sock352_pkt_hdr_t);
-    	newPacket.opt_ptr = 0;
-    	newPacket.protocol = 0;
+    newPacket.version = SOCK352_VER_1;
+    newPacket.header_len = sizeof(sock352_pkt_hdr_t);
+    newPacket.opt_ptr = 0;
+    newPacket.protocol = 0;
 	newPacket.window = MAX_BUFFER;
 	return newPacket;	
 }
 
-/* This is a sequence number incrementor */
-int getSeq() {
-    	return myConnection->sequence++;
+uint64_t getSeq() {
+	/* This is a sequence number incrementor */
+    return myConnection->sequence++;
 }
 
-/* this is the initial init function if there is only a single port listed */
 int sock352_init(int port) {
+	/* this is the initial init function if there is only a single port listed */
+	
+	/* call global initializing function */
 	init();
 	
 	/* here, I attempt to sanitize the input and decide where to plugin the ports */
@@ -114,14 +113,17 @@ int sock352_init(int port) {
 	}
 	
 	printf("My Port: %d\n", myConnection->myPort);
-    	printf("Server Port: %d\n", myConnection->yourPort);
+    printf("Server Port: %d\n", myConnection->yourPort);
 	printf("sock352_init: success\n");
 
 	return SOCK352_SUCCESS;
 }
 
-/* if there is more than one port, and it is not the crypto version, use this */
+
 int sock352_init2(int remote_port, int local_port) {
+	/* if there is more than one port, and it is not the crypto version, use this */
+	
+	/* call global initializing function */
 	init();
 	
 	/* here, I attempt to sanitize the input and decide where to plugin the ports */
@@ -144,7 +146,7 @@ int sock352_init2(int remote_port, int local_port) {
 	}
 	
 	printf("My Port: %d\n", myConnection->myPort);
-    	printf("Server Port: %d\n", myConnection->yourPort);
+    printf("Server Port: %d\n", myConnection->yourPort);
 	printf("sock352_init2: success\n");
 	
 	return SOCK352_SUCCESS;
@@ -202,8 +204,8 @@ int sock352_socket(int domain, int type, int protocol) {
 int sock352_bind (int fd, struct sockaddr_sock352 *addr, socklen_t len){
 	/* store the socklength and fd to a global variable */
 	myConnection->socklength = len;
-	myConnection->myFDbind = fd;
-	
+	myConnection->myFD = fd;
+
 	/* create a sockaddr_in of my address */
 	struct sockaddr_in myAddr;
 	memset((char *) &myAddr, 0, sizeof(myAddr));
@@ -211,17 +213,20 @@ int sock352_bind (int fd, struct sockaddr_sock352 *addr, socklen_t len){
 	myAddr.sin_addr.s_addr = htonl(INADDR_ANY);
 	myAddr.sin_port = htons(myConnection->myPort);
 	
-	printf("sock352_bind: success, bind port is %d\n",ntohs(myAddr.sin_port));
-	
+	/* bind and print its success */
 	if(bind(fd, (struct sockaddr *) &myAddr, len) < 0) {
 		printf("sock352_bind: failure to bind\n");
 		return SOCK352_FAILURE;
 	}
-
+	
+	printf("sock352_bind: success, bind port is %d\n",ntohs(myAddr.sin_port));
+	
 	return SOCK352_SUCCESS;
 }
 
 int sock352_listen (int fd, int n){
+	/* this is the server, so mark it as such */
+	myConnection->isServer = true;
 	/* just do this in accept, because it's easier */
 	return SOCK352_SUCCESS;
 }
@@ -282,10 +287,16 @@ int sock352_accept (int fd, sockaddr_sock352_t *addr, int *len) {
 	printPacketInfo(sentMsg);
 	setAck(ackReceived, sentMsg.ack_no);
 	
+	/* set the connection to be open */
+	myConnection->isOpen = true;
+	
 	return fd;
 }
 
 int sock352_connect(int fd, sockaddr_sock352_t *addr, socklen_t len) {
+	/* declare this to be client */
+	myConnection->isClient = true;
+	
 	/* create struct for storing the server (not client's) address. */
 	struct sockaddr_in yourAddy;
 	yourAddy.sin_family = AF_INET;
@@ -297,10 +308,10 @@ int sock352_connect(int fd, sockaddr_sock352_t *addr, socklen_t len) {
 	myConnection->socklength = len;
 	
     /* create the packets we plan to use for the SYN/ACK */
-    	sock352_pkt_hdr_t sentMsg, receivedMsg;
+    sock352_pkt_hdr_t sentMsg, receivedMsg;
 
     /* filling this packet out as per project specifications */
-	sentMsg = createPacket(getSeq(), myConnection->ackSent, SOCK352_SYN); 
+	sentMsg = createPacket(getSeq(), 0, SOCK352_SYN); 
 
 	/* Send the SYN */
 	if(sendto(fd, &sentMsg, sizeof(sentMsg), 0, (struct sockaddr *) &yourAddy, len) < 0) {
@@ -343,44 +354,110 @@ int sock352_connect(int fd, sockaddr_sock352_t *addr, socklen_t len) {
 	printf("sock352_connect: sent final ACK\n");
 	printPacketInfo(sentMsg);
 	
+	/* Declare that the connection is now open from the client side */
+	myConnection->isOpen = true;
+	
 	return SOCK352_SUCCESS;
 }
 
-extern int sock352_close(int fd) {
-	/* this was my attempt to close by sending the FIN/ACK/ACK bit I was not sure if it worked */
+int sock352_close(int fd) {
 
-	/*
-	pkt closePacket, receiveClosePacket;
-	closePacket.Msg = createPacket(getSeq(), (myConnection->ackSent), SOCK352_FIN);
+	/* the sock352_close only allows closing from client -> server, not closing from server -> client */
+		
+	/* if it is no longer open and this is the second sock352_close sent, just free stuff */
+	if(myConnection->isOpen == false) {
+		close(fd);
+		free(myConnection);
+		return SOCK352_SUCCESS;
+	}
+	
+	sock352_pkt_hdr_t closePacket, receiveClosePacket;
+	
+	if(myConnection->isClient == true) {
+		closePacket = createPacket(getSeq(), 0, SOCK352_FIN);
+		
+		/* send a FIN packet */
+		if(sendto(fd, &closePacket, sizeof(sock352_pkt_hdr_t), 0, (struct sockaddr *) &myConnection->yourAddress, myConnection->socklength) < 0) {
+			printf("sock352_close: Client failed to send FIN packet");
+			return SOCK352_FAILURE;
+		}
+		
+		printf("sock352_close: sent FIN packet\n");
+		
+		/* receive an ACK packet */
+		if(recvfrom(fd, &receiveClosePacket, sizeof(sock352_pkt_hdr_t), 0, (struct sockaddr *) &myConnection->yourAddress, &myConnection->socklength) < 0) {
+			printf("sock352_close: Client failed to receive ACK packet\n");
+			return SOCK352_FAILURE;
+		}
+		
+		/* check if the packet is an ACK packet with the right ack_no */
+		if(receiveClosePacket.flags != SOCK352_ACK || receiveClosePacket.ack_no != (closePacket.sequence_no + 1)) {
+			printf("sock352_close: Client did not receive ACK flag\n");
+			return SOCK352_FAILURE;
+		}
+		printf("sock352_close: received ACK for FIN\n");
+		
+		/* send final ACK */
+		closePacket = createPacket(getSeq(), (receiveClosePacket.sequence_no + 1), SOCK352_ACK);
+		
+		if(sendto(fd, &closePacket, sizeof(sock352_pkt_hdr_t), 0, (struct sockaddr *) &myConnection->yourAddress, myConnection->socklength) < 0) {
+			printf("sock352_close: Client failed to send final ACK packet");
+			return SOCK352_FAILURE;
+		}
+		printf("sock352_close: sent final ACK packet\n");
+		
+		/* close the FD */
+		close(fd);
+		myConnection->isOpen = false;
+		
+		return SOCK352_SUCCESS;
+	}
+	else if(myConnection->isServer == true) {
+		/* receive initial FIN packet */
+		if(recvfrom(fd, &receiveClosePacket, sizeof(sock352_pkt_hdr_t), 0, (struct sockaddr *) &myConnection->yourAddress, &myConnection->socklength) < 0) {
+			printf("sock352_close: Server failed to receive FIN packet\n");
+			return SOCK352_FAILURE;
+		}
 
-	if(sendto(fd, &closePacket, sizeof(pkt), 0, (struct sockaddr *) &myConnection->yourAddress, myConnection->socklength) < 0) {
-		printf("sock352_close: failed to send packet 1\n");
-		return SOCK352_FAILURE;
-	}
-	printPacketInfo(closePacket.Msg);
-	
-	if(recvfrom(fd, &receiveClosePacket, sizeof(pkt), 0, (struct sockaddr *) &myConnection->yourAddress, &myConnection->socklength) < 0) {
-		printf("sock352_close: failed to get final ACK\n");
-		return SOCK352_FAILURE;
-	}
-	
-	closePacket.Msg = createPacket(getSeq(), (myConnection->ackSent), SOCK352_ACK);
-	
-	if(sendto(fd, &closePacket, sizeof(pkt), 0, (struct sockaddr *) &myConnection->yourAddress, myConnection->socklength) < 0) {
-		printf("sock352_close: failed to send packet 2\n");
-		return SOCK352_FAILURE;
-	}
-	printPacketInfo(closePacket.Msg);
-	
-	if(recvfrom(fd, &receiveClosePacket, sizeof(pkt), 0, (struct sockaddr *) &myConnection->yourAddress, &myConnection->socklength) < 0) {
-		printf("sock352_close: failed to get final ACK\n");
-		return SOCK352_FAILURE;
-	}
-	free(myConnection);
-	
-	*/
+		/* check flags to ensure it is a FIN packet */
+		if(receiveClosePacket.flags != SOCK352_FIN) {
+			printf("sock352_close: Server failed to receive FIN flag on packet\n");
+			return SOCK352_FAILURE;
+		}
+		
+		printf("sock352_close: received initial FIN packet\n");
+				
+		/* send the first ACK packet */
+		closePacket = createPacket(getSeq(), (receiveClosePacket.sequence_no + 1), SOCK352_ACK);
+		
+		if(sendto(fd, &closePacket, sizeof(sock352_pkt_hdr_t), 0, (struct sockaddr *) &myConnection->yourAddress, myConnection->socklength) < 0) {
+			printf("sock352_close: Server failed to send ACK packet");
+			return SOCK352_FAILURE;
+		}
+		
+		printf("sock352_close: sent first ACK packet\n");
+		
+		/* receive an ACK packet */
+		if(recvfrom(fd, &receiveClosePacket, sizeof(sock352_pkt_hdr_t), 0, (struct sockaddr *) &myConnection->yourAddress, &myConnection->socklength) < 0) {
+			printf("sock352_close: Server failed to receive FIN packet\n");
+			return SOCK352_FAILURE;
+		}
+		
+		/* check ACK packet's flags */
+		if(receiveClosePacket.flags != SOCK352_ACK || receiveClosePacket.ack_no != (closePacket.sequence_no + 1)) {
+			printf("sock352_close: Server failed to receive ACK flag on packet\n");
+			return SOCK352_FAILURE;
+		}
+		
+		printf("sock352_close: received final ACK packet\n");
+		
+		/* close the FD */
+		close(fd);
+		myConnection->isOpen = false;
+		
+		return SOCK352_SUCCESS;
+	}	
 
-	close(fd);
 	return SOCK352_SUCCESS;
 }
 
@@ -401,9 +478,14 @@ int sock352_read(int fd, void *buf, int count) {
 	sendPacket.Msg = createPacket(getSeq(), (receivePacket.Msg.sequence_no + 1), SOCK352_ACK);
 	
 	/* send an ACK packet after you increment the appropriate information */
-	if(sendto(fd, &sendPacket, sizeof(pkt), 0, (struct sockaddr *) &myConnection->yourAddress, myConnection->socklength) < 0) {
-		printf("sock352_read: failed to send packet\n");
-		return SOCK352_FAILURE;
+	bool sent = false;
+	
+	while(sent == false) {
+		if(sendto(fd, &sendPacket, sizeof(pkt), 0, (struct sockaddr *) &myConnection->yourAddress, myConnection->socklength) < 0) {
+			printf("sock352_read: failed to send packet\n");
+			continue;
+		}
+		sent = true;
 	}
 	
 	setAck(ackSent, sendPacket.Msg.sequence_no + 1);
@@ -416,40 +498,45 @@ int sock352_read(int fd, void *buf, int count) {
 
 int sock352_write(int fd, void *buf, int count){
 	/* initialize two packets for sending and receiving */
-	pkt receivePacket, sendPacket;
+	pkt * receivePacket = (pkt *) malloc(sizeof(pkt));
+	pkt * sendPacket = (pkt *) malloc(sizeof(pkt));
 	
 	/* setup packet with payload and without a flag */
-	sendPacket.Msg = createPacket(getSeq(), (myConnection->ackSent), 0);
-	sendPacket.Msg.payload_len = count;
+	sendPacket->Msg = createPacket(getSeq(), 0, 0);
+	sendPacket->Msg.payload_len = count;
 	
 	/* copy the information from buf over to the pkt */
-	memcpy(sendPacket.info, buf, count);
+	memcpy(sendPacket->info, buf, count);
 	bool sent = false;
 	
 	/* loop through and attempt to send the packet and get an ack in return */
 	while(sent == false) {
-		if(sendto(fd, &sendPacket, sizeof(pkt), 0, (struct sockaddr *) &myConnection->yourAddress, myConnection->socklength) < 0) {
+		if(sendto(fd, sendPacket, sizeof(pkt), 0, (struct sockaddr *) &myConnection->yourAddress, myConnection->socklength) < 0) {
 			printf("sock352_write: failed to send packet\n");
-			return SOCK352_FAILURE;	
+			continue;
 		}
-		printPacketInfo(sendPacket.Msg);
+		printPacketInfo(sendPacket->Msg);
 		
-		if(recvfrom(fd, &receivePacket, sizeof(pkt), 0, (struct sockaddr *) &myConnection->yourAddress, &myConnection->socklength) < 0) {
+		if(recvfrom(fd, receivePacket, sizeof(pkt), 0, (struct sockaddr *) &myConnection->yourAddress, &myConnection->socklength) < 0) {
 			printf("sock352_write: failed to receive ACK\n");
 			return SOCK352_FAILURE;
 		}
 		
-		if((receivePacket.Msg.ack_no != sendPacket.Msg.sequence_no + 1) || (receivePacket.Msg.flags != SOCK352_ACK)) {
-			printf("sock352_write: failed to receive proper packet\n");
-			return SOCK352_FAILURE;
+		if((receivePacket->Msg.ack_no != sendPacket->Msg.sequence_no + 1) || (receivePacket->Msg.flags != SOCK352_ACK)) {
+			printf("sock352_write: failed to receive correct ack packet\n");
+			continue;
 		}
 		else {
 			sent = true;
-			printPacketInfo(receivePacket.Msg);
-			setAck(ackSent, sendPacket.Msg.sequence_no + 1);
-			setAck(ackReceived, receivePacket.Msg.sequence_no);
+			printPacketInfo(receivePacket->Msg);
+			setAck(ackSent, sendPacket->Msg.sequence_no + 1);
+			setAck(ackReceived, receivePacket->Msg.sequence_no);
 		}
 	}
+	
+	free(receivePacket);
+	free(sendPacket);
+	
 	printf("sock352_write: success\n");
 	return count;
 }
